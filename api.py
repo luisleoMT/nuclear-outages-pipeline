@@ -1,11 +1,4 @@
-"""
-Nuclear Outages REST API
-Endpoints:
-  GET  /data     – query outage records with filters & pagination
-  POST /refresh  – trigger a fresh extraction from EIA API
-  GET  /summary  – daily summary with rolling averages
-"""
-
+import asyncio
 import logging
 import os
 from datetime import date
@@ -23,6 +16,27 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(title="Nuclear Outages API", version="1.0.0")
 
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    """On startup, run extraction in background if no data exists yet."""
+    if not RAW_PARQUET.exists():
+        log.info("No data found — running initial extraction in background...")
+        asyncio.get_event_loop().run_in_executor(None, _run_pipeline)
+
+
+def _run_pipeline() -> None:
+    """Run connector + data_model synchronously (called from background thread)."""
+    try:
+        import connector  # noqa: PLC0415
+        import data_model  # noqa: PLC0415
+        df = connector.run(incremental=False)
+        if not df.empty:
+            data_model.run()
+        log.info("Background pipeline complete.")
+    except Exception as exc:
+        log.error("Background pipeline failed: %s", exc, exc_info=True)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,15 +49,18 @@ MODEL_DIR       = DATA_DIR / "model"
 RAW_PARQUET     = MODEL_DIR / "raw_outages.parquet"
 SUMMARY_PARQUET = MODEL_DIR / "daily_summary.parquet"
 
+# S8392: bind to localhost only; use 0.0.0.0 only when explicitly deploying
 API_HOST = os.environ.get("API_HOST", "127.0.0.1")
 
 APP_API_KEY    = os.environ.get("APP_API_KEY", "")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+# S1764: use a single helper for key comparison to avoid identical sub-expressions
 def _is_valid_key(key: Optional[str]) -> bool:
     return not APP_API_KEY or key == APP_API_KEY
 
 
+# S8410: use Annotated for FastAPI dependency injection
 def require_auth(key: Annotated[Optional[str], Depends(api_key_header)] = None) -> None:
     if not _is_valid_key(key):
         raise HTTPException(
@@ -92,7 +109,7 @@ def _paginate_df(df: pd.DataFrame, page: int, limit: int) -> pd.DataFrame:
     return df.sort_values("period", ascending=False).iloc[offset: offset + limit]
 
 
-# Routes
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/", tags=["Health"])
 def root() -> dict:
