@@ -4,11 +4,58 @@ End-to-end data pipeline that extracts U.S. nuclear outage data from the **EIA O
 
 ---
 
+## ER Diagram
+
+```mermaid
+erDiagram
+  RAW_OUTAGES {
+    int id PK
+    date period
+    float capacity
+    float outage_mw
+    float percent_outage
+  }
+  DAILY_SUMMARY {
+    date period PK
+    float capacity
+    float outage_mw
+    float percent_outage
+    float outage_mw_delta
+    float rolling_avg_7d
+  }
+  RAW_OUTAGES ||--|| DAILY_SUMMARY : "aggregated into"
+```
+
+### Table descriptions
+
+**`raw_outages`** — daily U.S. nuclear outage facts (one row per day)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | int | Surrogate primary key |
+| `period` | date | Reporting date |
+| `capacity` | float | Total nameplate capacity (MW) |
+| `outage_mw` | float | Total MW offline |
+| `percent_outage` | float | % of capacity offline |
+
+**`daily_summary`** — same data enriched with analytics
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `period` | date | Primary key |
+| `capacity` | float | Total nameplate capacity (MW) |
+| `outage_mw` | float | Total MW offline |
+| `percent_outage` | float | % of capacity offline |
+| `outage_mw_delta` | float | Day-over-day change in MW offline |
+| `rolling_avg_7d` | float | 7-day rolling average of outage_mw |
+
+---
+
 ## Architecture
 
 ```
 EIA API → connector.py → Parquet (raw)
-                       → data_model.py → Parquet (model: plants / outages / daily_summary)
+                       → data_model.py → Parquet (model: raw_outages / daily_summary)
                                        → api.py (FastAPI) → frontend/index.html
 ```
 
@@ -22,6 +69,12 @@ EIA API → connector.py → Parquet (raw)
 git clone <your-repo-url>
 cd nuclear-outages-pipeline
 
+python -m venv venv
+# Mac/Linux:
+source venv/bin/activate
+# Windows:
+venv\Scripts\activate
+
 pip install -r requirements.txt
 ```
 
@@ -30,103 +83,80 @@ pip install -r requirements.txt
 Register for a free key at https://www.eia.gov/opendata/
 
 ```bash
+# Mac/Linux:
 export EIA_API_KEY="your_key_here"
+
+# Windows CMD:
+set EIA_API_KEY=your_key_here
 ```
 
-### 3. Run the connector (extract data)
+### 3. Run the full pipeline
 
 ```bash
-# Incremental (default — skips already-extracted dates)
+# Extract data from EIA API (incremental by default)
 python connector.py
 
-# Full re-extraction
-python connector.py --full
-```
-
-Data is saved to `data/nuclear_outages.parquet`.
-
-### 4. Build the data model
-
-```bash
+# Build normalized data model
 python data_model.py
+
+# Start the REST API
+uvicorn api:app --host 127.0.0.1 --port 8000 --reload
+
+# Open the dashboard
+# Mac:   open frontend/index.html
+# Windows: start frontend\index.html
 ```
-
-Creates normalized tables in `data/model/`.
-
-### 5. Start the API
-
-```bash
-uvicorn api:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Interactive docs: http://localhost:8000/docs
-
-### 6. Open the frontend
-
-Open `frontend/index.html` in your browser (no build step needed).  
-Point it at `http://localhost:8000` (default).
-
----
-
-## API Key Setup
-
-| Variable      | Description                                      |
-|---------------|--------------------------------------------------|
-| `EIA_API_KEY` | Required. EIA API key for data extraction.       |
-| `APP_API_KEY` | Optional. If set, all API endpoints require `X-API-Key: <value>` header. |
 
 ---
 
 ## API Endpoints
 
-| Method | Path        | Description                                  |
-|--------|-------------|----------------------------------------------|
-| GET    | `/`         | Health check                                 |
-| GET    | `/data`     | Query outage records (paginated + filtered)  |
-| POST   | `/refresh`  | Trigger EIA extraction + model rebuild       |
-| GET    | `/summary`  | Daily U.S. aggregate totals                  |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Health check |
+| GET | `/data` | Query outage records (paginated + filtered) |
+| POST | `/refresh` | Trigger EIA extraction + model rebuild |
+| GET | `/summary` | Daily U.S. aggregate totals with rolling avg |
 
 ### `/data` Query Parameters
 
-| Parameter    | Type   | Description                         |
-|--------------|--------|-------------------------------------|
-| `start_date` | date   | Filter from date (YYYY-MM-DD)       |
-| `end_date`   | date   | Filter to date (YYYY-MM-DD)         |
-| `plant_name` | string | Partial plant name (case-insensitive)|
-| `plant_id`   | int    | Exact plant ID                      |
-| `page`       | int    | Page number (default: 1)            |
-| `limit`      | int    | Records per page (default: 100, max: 5000) |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start_date` | date | Filter from date (YYYY-MM-DD) |
+| `end_date` | date | Filter to date (YYYY-MM-DD) |
+| `page` | int | Page number (default: 1) |
+| `limit` | int | Records per page (default: 100, max: 5000) |
 
-### Example Requests
+### Example requests
 
 ```bash
-# All outages in January 2024
-curl "http://localhost:8000/data?start_date=2024-01-01&end_date=2024-01-31"
+# Latest 5 records
+curl "http://localhost:8000/data?limit=5"
 
-# Filter by plant name
-curl "http://localhost:8000/data?plant_name=Diablo+Canyon&limit=50"
+# Filter by date range
+curl "http://localhost:8000/data?start_date=2024-01-01&end_date=2024-12-31"
 
-# Trigger refresh
+# Trigger incremental refresh
 curl -X POST "http://localhost:8000/refresh"
 
-# Full re-extraction
+# Force full re-extraction
 curl -X POST "http://localhost:8000/refresh?full=true"
 ```
 
-### Example Response (`/data`)
+### Example response (`/data`)
 
 ```json
 {
-  "total": 1240,
+  "total": 7019,
   "page": 1,
-  "limit": 100,
+  "limit": 5,
   "data": [
     {
-      "period": "2024-03-15",
-      "plant_id": 12,
-      "outage_mw": 950.0,
-      "percent_outage": 89.5,
-      "plant_name": "Diablo Canyon"
+      "id": 7019,
+      "period": "2026-03-20",
+      "capacity": 100013.0,
+      "outage_mw": 15917.108,
+      "percent_outage": 15.92
     }
   ]
 }
@@ -134,34 +164,13 @@ curl -X POST "http://localhost:8000/refresh?full=true"
 
 ---
 
-## Data Model
+## Environment Variables
 
-### Tables
-
-**`plants`** — static plant dimension  
-| Column | Type | Notes |
-|--------|------|-------|
-| `plant_id` | int | Primary key (surrogate) |
-| `plant_name` | string | Nuclear facility name |
-| `rated_capacity_mw` | float | Nameplate capacity (MW) |
-
-**`outages`** — daily outage facts  
-| Column | Type | Notes |
-|--------|------|-------|
-| `period` | date | Reporting date |
-| `plant_id` | int | FK → plants.plant_id |
-| `outage_mw` | float | MW offline |
-| `percent_outage` | float | % of capacity offline |
-
-**`daily_summary`** — pre-aggregated U.S. totals  
-| Column | Type | Notes |
-|--------|------|-------|
-| `period` | date | Reporting date |
-| `total_capacity_mw` | float | Total MW offline nationally |
-| `avg_percent_outage` | float | Average % offline across plants |
-| `plants_reporting` | int | Number of plants reporting |
-
-See the ER diagram: `er_diagram.md`
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `EIA_API_KEY` | ✅ Yes | EIA API key for data extraction |
+| `APP_API_KEY` | No | If set, all API endpoints require `X-API-Key: <value>` header |
+| `API_HOST` | No | API bind address (default: `127.0.0.1`) |
 
 ---
 
@@ -171,23 +180,7 @@ See the ER diagram: `er_diagram.md`
 pytest tests/ -v
 ```
 
----
-
-## Assumptions Made
-
-1. **EIA API v2** is used (`https://api.eia.gov/v2/nuclear-outages/us-nuclear-outages/data/`).
-2. The `plantName` + `period` combination is treated as a natural unique key for deduplication.
-3. `rated_capacity_mw` is taken from the latest record for each plant (it rarely changes).
-4. The frontend connects to `http://localhost:8000` — change `API_BASE` in `index.html` for remote deployments.
-5. Authentication is optional: the API works without `APP_API_KEY` set.
-
----
-
-## Bonus Features Implemented
-
-- ✅ **Incremental extraction** — checkpoint file tracks last run date; subsequent runs only fetch new data
-- ✅ **Auth/authorization** — `APP_API_KEY` env var enables X-API-Key header validation
-- ✅ **Unit + integration tests** — `tests/test_pipeline.py` covers connector, data model, and API
+Expected output: **14 passed**
 
 ---
 
@@ -202,13 +195,24 @@ nuclear-outages-pipeline/
 │   └── index.html        # Part 4 – web dashboard
 ├── tests/
 │   └── test_pipeline.py  # unit + integration tests
-├── er_diagram.md         # ER diagram (text)
+├── er_diagram.md         # ER diagram
 ├── requirements.txt      # Python dependencies
-├── data/                 # generated at runtime
-│   ├── nuclear_outages.parquet
-│   └── model/
-│       ├── plants.parquet
-│       ├── outages.parquet
-│       └── daily_summary.parquet
 └── README.md
 ```
+
+---
+
+## Assumptions Made
+
+1. The `us-nuclear-outages` endpoint returns **national daily aggregates** (one row per day), not per-plant data. Per-plant data is available via `facility-nuclear-outages` and `generator-nuclear-outages`.
+2. `period` is the natural unique key — deduplicated on merge so re-runs are idempotent.
+3. The frontend connects to `http://localhost:8000` by default — change `API_BASE` in `index.html` for remote deployments.
+4. Authentication is optional: the API works without `APP_API_KEY` set.
+
+---
+
+## Bonus Features
+
+- ✅ **Incremental extraction** — checkpoint file tracks last run date; only fetches new records on subsequent runs
+- ✅ **Auth/authorization** — optional `X-API-Key` header validation via `APP_API_KEY` env var
+- ✅ **14 unit + integration tests** — covers connector, data model, and API endpoints
