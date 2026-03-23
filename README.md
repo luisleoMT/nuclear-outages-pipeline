@@ -2,6 +2,10 @@
 
 End-to-end data pipeline that extracts U.S. nuclear outage data from the **EIA Open Data API**, stores it in Parquet files, exposes it via a REST API, and provides a web dashboard.
 
+**Live demo:**
+- 🌐 API: https://nuclear-outages-pipeline-production.up.railway.app/docs
+- 📊 Dashboard: https://aquamarine-tartufo-b0b464.netlify.app
+
 ---
 
 ## Architecture
@@ -9,7 +13,11 @@ End-to-end data pipeline that extracts U.S. nuclear outage data from the **EIA O
 ```
 EIA API → connector.py → Parquet (raw)
                        → data_model.py → Parquet (model: raw_outages / daily_summary)
-                                       → api.py (FastAPI) → frontend/index.html
+                                       → api.py (FastAPI)
+                                                ↓
+                                       Railway (cloud API)
+                                                ↓
+                                       frontend/index.html → Netlify (cloud dashboard)
 ```
 
 ---
@@ -19,7 +27,7 @@ EIA API → connector.py → Parquet (raw)
 ### 1. Clone & install dependencies
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/TU_USUARIO/nuclear-outages-pipeline.git
 cd nuclear-outages-pipeline
 
 python -m venv venv
@@ -43,7 +51,7 @@ export EIA_API_KEY="your_key_here"
 set EIA_API_KEY=your_key_here
 ```
 
-### 3. Run the full pipeline
+### 3. Run the full pipeline locally
 
 ```bash
 # Step 1 — Extract data from EIA API
@@ -84,16 +92,13 @@ uvicorn api:app --host 127.0.0.1 --port 8000 --reload
 
 ```bash
 # Latest 5 records
-curl "http://localhost:8000/data?limit=5"
+curl "https://nuclear-outages-pipeline-production.up.railway.app/data?limit=5"
 
 # Filter by date range
-curl "http://localhost:8000/data?start_date=2024-01-01&end_date=2024-12-31"
+curl "https://nuclear-outages-pipeline-production.up.railway.app/data?start_date=2024-01-01&end_date=2024-12-31"
 
 # Trigger incremental refresh
-curl -X POST "http://localhost:8000/refresh"
-
-# Force full re-extraction
-curl -X POST "http://localhost:8000/refresh?full=true"
+curl -X POST "https://nuclear-outages-pipeline-production.up.railway.app/refresh"
 ```
 
 ### Example response (`/data`)
@@ -186,6 +191,41 @@ Expected output: **15 passed**
 
 ---
 
+## Cloud Deployment
+
+### API — Railway
+
+The API is deployed on [Railway](https://railway.app) using Docker.
+
+On startup, the API automatically runs the connector and data model in the background if no data exists yet.
+
+**To deploy your own instance:**
+1. Fork this repo
+2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub repo
+3. Select your fork — Railway auto-detects the `Dockerfile`
+4. Add environment variables in **Settings → Variables**:
+
+| Variable | Value |
+|----------|-------|
+| `EIA_API_KEY` | your EIA API key |
+| `API_HOST` | `0.0.0.0` |
+
+5. Go to **Settings → Networking → Generate Domain** (use the port shown in logs, typically `8080`)
+
+### Dashboard — Netlify
+
+The frontend is deployed on [Netlify](https://netlify.com) as a static site.
+
+**To deploy your own instance:**
+1. Go to [netlify.com](https://netlify.com) → New site → Import from Git
+2. Select your repo
+3. Set **Publish directory** to `frontend`
+4. Click Deploy
+
+> Make sure `frontend/index.html` has the correct Railway API URL set in `const API = "..."`.
+
+---
+
 ## Project Structure
 
 ```
@@ -194,69 +234,23 @@ nuclear-outages-pipeline/
 ├── data_model.py         # Part 2 – schema normalization
 ├── api.py                # Part 3 – FastAPI REST API
 ├── frontend/
-│   └── index.html        # Part 4 – web dashboard
+│   └── index.html        # Part 4 – web dashboard (hosted on Netlify)
 ├── tests/
 │   └── test_pipeline.py  # unit + integration tests
 ├── conftest.py           # pytest path configuration
+├── Dockerfile            # container definition for Railway
+├── railway.json          # Railway deployment config
 ├── requirements.txt      # Python dependencies
 └── README.md
 ```
 
 ---
 
-
----
-
-## Cloud Deployment (Railway)
-
-### 1. Create a Railway account
-Go to [railway.app](https://railway.app) and sign up with your GitHub account.
-
-### 2. Deploy from GitHub
-1. Click **New Project** → **Deploy from GitHub repo**
-2. Select your `nuclear-outages-pipeline` repository
-3. Railway auto-detects the `Dockerfile` and builds the image
-
-### 3. Set environment variables
-In Railway dashboard → your service → **Variables**, add:
-
-| Variable | Value |
-|----------|-------|
-| `EIA_API_KEY` | your EIA API key |
-| `APP_API_KEY` | any secret string (optional auth) |
-| `API_HOST` | `0.0.0.0` |
-
-> Railway injects `PORT` automatically — no need to set it manually.
-
-### 4. Get your public URL
-Railway assigns a URL like:
-```
-https://nuclear-outages-pipeline-production.up.railway.app
-```
-
-### 5. Update the frontend
-In `frontend/index.html`, change line:
-```javascript
-const API = "http://localhost:8000";
-```
-to:
-```javascript
-const API = "https://your-app.up.railway.app";
-```
-
-### Verify deployment
-```bash
-curl https://your-app.up.railway.app/
-# {"status":"ok","message":"Nuclear Outages API is running."}
-
-curl "https://your-app.up.railway.app/data?limit=3"
-```
-
 ## Assumptions Made
 
 1. The `us-nuclear-outages` endpoint returns **national daily aggregates** — one row per day representing the entire U.S., not per-plant data.
 2. `period` is the natural unique key — deduplicated on merge so re-runs are idempotent.
-3. The frontend connects to `http://localhost:8000` by default — change `API_BASE` in `index.html` for remote deployments.
+3. The frontend connects to the Railway API URL by default — change `const API` in `index.html` for local development.
 4. Authentication is optional: the API works without `APP_API_KEY` set.
 
 ---
@@ -266,3 +260,4 @@ curl "https://your-app.up.railway.app/data?limit=3"
 - **Incremental extraction** — checkpoint file tracks last run date; only fetches new records on subsequent runs
 - **Auth/authorization** — optional `X-API-Key` header validation via `APP_API_KEY` env var
 - **15 unit + integration tests** — covers connector, data model, and API endpoints
+- **Cloud deployment** — API on Railway, dashboard on Netlify
