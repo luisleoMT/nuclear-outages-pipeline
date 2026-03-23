@@ -4,53 +4,6 @@ End-to-end data pipeline that extracts U.S. nuclear outage data from the **EIA O
 
 ---
 
-## ER Diagram
-
-```mermaid
-erDiagram
-  RAW_OUTAGES {
-    int id PK
-    date period
-    float capacity
-    float outage_mw
-    float percent_outage
-  }
-  DAILY_SUMMARY {
-    date period PK
-    float capacity
-    float outage_mw
-    float percent_outage
-    float outage_mw_delta
-    float rolling_avg_7d
-  }
-  RAW_OUTAGES ||--|| DAILY_SUMMARY : "aggregated into"
-```
-
-### Table descriptions
-
-**`raw_outages`** — daily U.S. nuclear outage facts (one row per day)
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | int | Surrogate primary key |
-| `period` | date | Reporting date |
-| `capacity` | float | Total nameplate capacity (MW) |
-| `outage_mw` | float | Total MW offline |
-| `percent_outage` | float | % of capacity offline |
-
-**`daily_summary`** — same data enriched with analytics
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `period` | date | Primary key |
-| `capacity` | float | Total nameplate capacity (MW) |
-| `outage_mw` | float | Total MW offline |
-| `percent_outage` | float | % of capacity offline |
-| `outage_mw_delta` | float | Day-over-day change in MW offline |
-| `rolling_avg_7d` | float | 7-day rolling average of outage_mw |
-
----
-
 ## Architecture
 
 ```
@@ -164,11 +117,58 @@ curl -X POST "http://localhost:8000/refresh?full=true"
 
 ---
 
+## ER Diagram
+
+```mermaid
+erDiagram
+  RAW_OUTAGES {
+    int id PK
+    date period
+    float capacity
+    float outage_mw
+    float percent_outage
+  }
+  DAILY_SUMMARY {
+    date period PK
+    float capacity
+    float outage_mw
+    float percent_outage
+    float outage_mw_delta
+    float rolling_avg_7d
+  }
+  RAW_OUTAGES ||--|| DAILY_SUMMARY : "aggregated into"
+```
+
+### Table descriptions
+
+**`raw_outages`** — daily U.S. nuclear outage facts (one row per day)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | int | Surrogate primary key |
+| `period` | date | Reporting date |
+| `capacity` | float | Total nameplate capacity (MW) |
+| `outage_mw` | float | Total MW offline |
+| `percent_outage` | float | % of capacity offline |
+
+**`daily_summary`** — same data enriched with analytics
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `period` | date | Primary key |
+| `capacity` | float | Total nameplate capacity (MW) |
+| `outage_mw` | float | Total MW offline |
+| `percent_outage` | float | % of capacity offline |
+| `outage_mw_delta` | float | Day-over-day change in MW offline |
+| `rolling_avg_7d` | float | 7-day rolling average of outage_mw |
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `EIA_API_KEY` | ✅ Yes | EIA API key for data extraction |
+| `EIA_API_KEY` | Yes | EIA API key for data extraction |
 | `APP_API_KEY` | No | If set, all API endpoints require `X-API-Key: <value>` header |
 | `API_HOST` | No | API bind address (default: `127.0.0.1`) |
 
@@ -213,6 +213,6 @@ nuclear-outages-pipeline/
 
 ## Bonus Features
 
-- ✅ **Incremental extraction** — checkpoint file tracks last run date; only fetches new records on subsequent runs
-- ✅ **Auth/authorization** — optional `X-API-Key` header validation via `APP_API_KEY` env var
-- ✅ **14 unit + integration tests** — covers connector, data model, and API endpoints
+- **Incremental extraction** — checkpoint file tracks last run date; only fetches new records on subsequent runs
+- **Auth/authorization** — optional `X-API-Key` header validation via `APP_API_KEY` env var
+- **14 unit + integration tests** — covers connector, data model, and API endpoints
