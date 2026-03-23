@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,18 +22,17 @@ class TestGetApiKey:
 class TestValidateRecord:
     def test_valid_record(self):
         from connector import validate_record
-        rec = {"period": "2024-01-01", "plantName": "Test Plant", "capacity": "1000", "outages": "200"}
+        rec = {"period": "2024-01-01", "capacity": "1000", "outage": "200"}
         assert validate_record(rec) is True
 
     def test_missing_field(self):
         from connector import validate_record
-        rec = {"period": "2024-01-01", "plantName": "Test Plant", "capacity": "1000"}
-        # missing 'outages'
+        rec = {"period": "2024-01-01", "capacity": "1000"}
         assert validate_record(rec) is False
 
     def test_none_field(self):
         from connector import validate_record
-        rec = {"period": "2024-01-01", "plantName": None, "capacity": "1000", "outages": "200"}
+        rec = {"period": "2024-01-01", "capacity": None, "outage": "200"}
         assert validate_record(rec) is False
 
 
@@ -70,7 +68,7 @@ class TestFetchPage:
 
         result = fetch_page("key", offset=0)
         assert result["response"]["total"] == 0
-        assert call_count["n"] == 3   # 1 fail + 1 retry + 1 success
+        assert call_count["n"] == 3
 
 
 # Data model tests
@@ -78,60 +76,80 @@ class TestFetchPage:
 class TestBuildModel:
     @pytest.fixture
     def sample_df(self):
+        """DataFrame matching the real EIA us-nuclear-outages schema (national aggregate)."""
         return pd.DataFrame([
-            {"period": "2024-01-01", "plantName": "Plant A", "capacity": "1000", "outages": "200", "percentOutage": "20"},
-            {"period": "2024-01-01", "plantName": "Plant B", "capacity": "800",  "outages": "400", "percentOutage": "50"},
-            {"period": "2024-01-02", "plantName": "Plant A", "capacity": "1000", "outages": "100", "percentOutage": "10"},
+            {"period": "2024-01-01", "capacity": "100000", "outage": "15000", "percentOutage": "15.0"},
+            {"period": "2024-01-02", "capacity": "100000", "outage": "14000", "percentOutage": "14.0"},
+            {"period": "2024-01-03", "capacity": "100000", "outage": "16000", "percentOutage": "16.0"},
         ])
 
-    def test_plants_table(self, sample_df):
+    def test_raw_outages_table(self, sample_df):
         from data_model import build_model
         tables = build_model(sample_df)
-        assert "plants" in tables
-        assert len(tables["plants"]) == 2
-        assert "plant_id" in tables["plants"].columns
+        assert "raw_outages" in tables
+        assert len(tables["raw_outages"]) == 3
+        assert "id" in tables["raw_outages"].columns
+        assert "outage_mw" in tables["raw_outages"].columns
 
-    def test_outages_table_deduplication(self, sample_df):
+    def test_daily_summary_table(self, sample_df):
         from data_model import build_model
         tables = build_model(sample_df)
-        outages = tables["outages"]
-        # 2 plants × 2 periods - 1 missing = 3 rows
-        assert len(outages) == 3
+        assert "daily_summary" in tables
+        assert len(tables["daily_summary"]) == 3
 
-    def test_daily_summary(self, sample_df):
+    def test_daily_summary_has_analytics_columns(self, sample_df):
         from data_model import build_model
         tables = build_model(sample_df)
         summary = tables["daily_summary"]
-        assert "total_capacity_mw" in summary.columns
-        assert "avg_percent_outage" in summary.columns
-        assert len(summary) == 2   # 2 distinct periods
+        assert "rolling_avg_7d" in summary.columns
+        assert "outage_mw_delta" in summary.columns
+
+    def test_deduplication_on_period(self):
+        from data_model import build_model
+        # Duplicate periods should be deduplicated
+        df = pd.DataFrame([
+            {"period": "2024-01-01", "capacity": "100000", "outage": "15000", "percentOutage": "15.0"},
+            {"period": "2024-01-01", "capacity": "100000", "outage": "15500", "percentOutage": "15.5"},
+        ])
+        tables = build_model(df)
+        assert len(tables["raw_outages"]) == 1
 
 
 # API tests (FastAPI TestClient)
-
 class TestAPI:
     @pytest.fixture(autouse=True)
     def setup_test_parquet(self, tmp_path, monkeypatch):
-        """Create minimal parquet files so the API doesn't fail."""
+        """Create minimal Parquet files and patch paths so the API uses them."""
         model_dir = tmp_path / "data" / "model"
         model_dir.mkdir(parents=True)
 
-        plants = pd.DataFrame([
-            {"plant_id": 1, "plant_name": "Plant A", "rated_capacity_mw": 1000.0},
-        ])
-        outages = pd.DataFrame([
-            {"period": pd.Timestamp("2024-01-01"), "plant_id": 1, "outage_mw": 200.0, "percent_outage": 20.0},
+        raw_outages = pd.DataFrame([
+            {
+                "id": 1,
+                "period": pd.Timestamp("2024-01-01"),
+                "capacity": 100000.0,
+                "outage_mw": 15000.0,
+                "percent_outage": 15.0,
+            }
         ])
         summary = pd.DataFrame([
-            {"period": pd.Timestamp("2024-01-01"), "total_capacity_mw": 200.0, "avg_percent_outage": 20.0, "plants_reporting": 1},
+            {
+                "period": pd.Timestamp("2024-01-01"),
+                "capacity": 100000.0,
+                "outage_mw": 15000.0,
+                "percent_outage": 15.0,
+                "outage_mw_delta": 0.0,
+                "rolling_avg_7d": 15000.0,
+            }
         ])
 
-        plants.to_parquet(model_dir / "plants.parquet", index=False)
-        outages.to_parquet(model_dir / "outages.parquet", index=False)
+        raw_outages.to_parquet(model_dir / "raw_outages.parquet", index=False)
         summary.to_parquet(model_dir / "daily_summary.parquet", index=False)
 
-        # Patch paths in api module
-        monkeypatch.chdir(tmp_path)
+        # Patch the Path constants inside the api module
+        import api
+        monkeypatch.setattr(api, "RAW_PARQUET",     model_dir / "raw_outages.parquet")
+        monkeypatch.setattr(api, "SUMMARY_PARQUET", model_dir / "daily_summary.parquet")
 
     def test_root(self):
         from fastapi.testclient import TestClient
