@@ -1,10 +1,10 @@
-# ☢ Nuclear Outages Pipeline
+# Nuclear Outages Pipeline
 
 End-to-end data pipeline that extracts U.S. nuclear outage data from the **EIA Open Data API**, stores it in Parquet files, exposes it via a REST API, and provides a web dashboard.
 
 **Live demo:**
-- 🌐 API: https://nuclear-outages-pipeline-production.up.railway.app/docs
-- 📊 Dashboard: https://aquamarine-tartufo-b0b464.netlify.app
+- API: https://nuclear-outages-pipeline-production.up.railway.app/docs
+- Dashboard: https://aquamarine-tartufo-b0b464.netlify.app
 
 ---
 
@@ -243,6 +243,12 @@ nuclear-outages-pipeline/
 ├── requirements.txt      # Python dependencies
 └── README.md
 ```
+
+---
+
+## Known Limitations
+
+- **`/refresh` takes ~10 seconds** in the cloud deployment because Railway uses an ephemeral filesystem — data is lost on every container restart, forcing a full re-extraction each time. In a production system this would be solved by using a persistent database (e.g. PostgreSQL) or a persistent volume, so only new records need to be fetched on each refresh.
 
 ---
 

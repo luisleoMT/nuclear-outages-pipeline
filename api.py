@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Optional
@@ -14,17 +15,6 @@ from fastapi.security import APIKeyHeader
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="Nuclear Outages API", version="1.0.0")
-
-
-@app.on_event("startup")
-async def startup_event() -> None:
-    """On startup, run extraction in background if no data exists yet."""
-    if not RAW_PARQUET.exists():
-        log.info("No data found — running initial extraction in background...")
-        asyncio.get_event_loop().run_in_executor(None, _run_pipeline)
-
-
 def _run_pipeline() -> None:
     """Run connector + data_model synchronously (called from background thread)."""
     try:
@@ -36,6 +26,18 @@ def _run_pipeline() -> None:
         log.info("Background pipeline complete.")
     except Exception as exc:
         log.error("Background pipeline failed: %s", exc, exc_info=True)
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    """Run extraction in background on startup if no data exists yet."""
+    if not RAW_PARQUET.exists():
+        log.info("No data found — running initial extraction in background...")
+        asyncio.get_event_loop().run_in_executor(None, _run_pipeline)
+    yield
+
+
+app = FastAPI(title="Nuclear Outages API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,18 +51,14 @@ MODEL_DIR       = DATA_DIR / "model"
 RAW_PARQUET     = MODEL_DIR / "raw_outages.parquet"
 SUMMARY_PARQUET = MODEL_DIR / "daily_summary.parquet"
 
-# S8392: bind to localhost only; use 0.0.0.0 only when explicitly deploying
 API_HOST = os.environ.get("API_HOST", "127.0.0.1")
 
 APP_API_KEY    = os.environ.get("APP_API_KEY", "")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-# S1764: use a single helper for key comparison to avoid identical sub-expressions
 def _is_valid_key(key: Optional[str]) -> bool:
     return not APP_API_KEY or key == APP_API_KEY
 
-
-# S8410: use Annotated for FastAPI dependency injection
 def require_auth(key: Annotated[Optional[str], Depends(api_key_header)] = None) -> None:
     if not _is_valid_key(key):
         raise HTTPException(
@@ -109,7 +107,7 @@ def _paginate_df(df: pd.DataFrame, page: int, limit: int) -> pd.DataFrame:
     return df.sort_values("period", ascending=False).iloc[offset: offset + limit]
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# Routes
 
 @app.get("/", tags=["Health"])
 def root() -> dict:
@@ -146,6 +144,10 @@ def get_data(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+# Track refresh status globally
+_refresh_status: dict = {"running": False, "last": None, "error": None}
+
+
 @app.post(
     "/refresh",
     tags=["Pipeline"],
@@ -158,26 +160,51 @@ def refresh(
     _:    Annotated[None, Depends(require_auth)],
     full: Annotated[bool, Query(description="Force full re-extraction")] = False,
 ) -> dict:
-    """Trigger EIA extraction and rebuild the data model."""
+    """Trigger EIA extraction in background and return immediately."""
+    if _refresh_status["running"]:
+        return {
+            "status": "running",
+            "message": "Refresh already in progress, please wait.",
+        }
+
+    # Run in background thread so the response returns immediately
+    asyncio.get_event_loop().run_in_executor(None, _run_refresh, full)
+
+    return {
+        "status": "accepted",
+        "message": "Refresh started in background. Call /refresh/status to check progress.",
+    }
+
+
+def _run_refresh(full: bool) -> None:
+    """Execute connector + data_model in a background thread."""
+    global _refresh_status
+    _refresh_status["running"] = True
+    _refresh_status["error"]   = None
     try:
         import connector   # noqa: PLC0415
         import data_model  # noqa: PLC0415
-        log.info("Refresh triggered (full=%s)", full)
+        log.info("Background refresh triggered (full=%s)", full)
         df = connector.run(incremental=not full)
         if not df.empty:
             data_model.run()
-        return {
-            "status": "success",
-            "rows_extracted": len(df),
-            "message": "Data refreshed successfully.",
-        }
-    except EnvironmentError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        _refresh_status["last"] = f"OK — {len(df)} rows extracted"
+        log.info("Background refresh complete.")
     except Exception as exc:
-        log.error("Refresh failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Refresh failed: {exc}") from exc
+        _refresh_status["error"] = str(exc)
+        log.error("Background refresh failed: %s", exc, exc_info=True)
+    finally:
+        _refresh_status["running"] = False
+
+
+@app.get("/refresh/status", tags=["Pipeline"])
+def refresh_status() -> dict:
+    """Check the status of the last refresh operation."""
+    return {
+        "running": _refresh_status["running"],
+        "last_result": _refresh_status["last"],
+        "error": _refresh_status["error"],
+    }
 
 
 @app.get(
