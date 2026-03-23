@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Nuclear Outages Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f5f6fa;
+      --surface:   #ffffff;
+      --border:    #e4e6ef;
+      --border-2:  #d0d3e0;
+      --accent:    #2563eb;
+      --accent-h:  #1d4ed8;
+      --accent-bg: #eff6ff;
+      --danger:    #dc2626;
+      --danger-bg: #fef2f2;
+      --success:   #16a34a;
+      --success-bg:#f0fdf4;
+      --warn:      #d97706;
+      --warn-bg:   #fffbeb;
+      --text:      #111827;
+      --text-2:    #6b7280;
+      --text-3:    #9ca3af;
+      --radius:    10px;
+      --radius-sm: 6px;
+      --shadow:    0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /*Header*/
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 28px;
+      height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 15px; font-weight: 600; color: var(--text);
+      text-decoration: none;
+    }
+    .logo-icon {
+      width: 30px; height: 30px; background: var(--accent);
+      border-radius: 8px; display: flex; align-items: center;
+      justify-content: center; color: #fff; font-size: 15px;
+    }
+    .header-sep { flex: 1; }
+    .badge {
+      font-size: 11px; font-weight: 500; padding: 3px 9px;
+      border-radius: 99px; letter-spacing: .3px;
+    }
+    .badge-blue { background: var(--accent-bg); color: var(--accent); }
+    .badge-green { background: var(--success-bg); color: var(--success); }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-3); display: inline-block;
+      margin-right: 5px;
+    }
+    .status-dot.online { background: var(--success); box-shadow: 0 0 0 2px var(--success-bg); }
+
+    /*Layout*/
+    main { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+
+    /*Section title*/
+    .section-title {
+      font-size: 11px; font-weight: 600; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: .8px;
+      margin-bottom: 12px;
+    }
+
+    /*Stat cards*/
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--card-accent, var(--border));
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .stat-card.blue::before  { --card-accent: var(--accent); }
+    .stat-card.green::before { --card-accent: var(--success); }
+    .stat-card.red::before   { --card-accent: var(--danger); }
+    .stat-card.warn::before  { --card-accent: var(--warn); }
+    .stat-label {
+      font-size: 11px; font-weight: 500; color: var(--text-2);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px;
+    }
+    .stat-value {
+      font-size: 28px; font-weight: 600; letter-spacing: -.5px;
+      line-height: 1; margin-bottom: 6px;
+    }
+    .stat-value.blue  { color: var(--accent); }
+    .stat-value.green { color: var(--success); }
+    .stat-value.red   { color: var(--danger); }
+    .stat-value.warn  { color: var(--warn); }
+    .stat-sub { font-size: 12px; color: var(--text-3); }
+
+    /*Controls card*/
+    .controls-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+    }
+    .controls-row {
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+    }
+    .ctrl-group { display: flex; flex-direction: column; gap: 5px; }
+    .ctrl-label {
+      font-size: 11px; font-weight: 500; color: var(--text-2);
+      text-transform: uppercase; letter-spacing: .4px;
+    }
+    .ctrl-group input,
+    .ctrl-group select {
+      background: var(--bg);
+      border: 1px solid var(--border-2);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 7px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+      min-width: 148px;
+      height: 34px;
+    }
+    .ctrl-group input:focus,
+    .ctrl-group select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+    .spacer { flex: 1; }
+
+    /*Buttons*/
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 16px; height: 34px; border-radius: var(--radius-sm);
+      font-size: 13px; font-weight: 500; font-family: inherit;
+      border: none; cursor: pointer; transition: .15s; white-space: nowrap;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-h); }
+    .btn-primary:active { transform: scale(.98); }
+    .btn-ghost {
+      background: transparent; color: var(--text-2);
+      border: 1px solid var(--border-2);
+    }
+    .btn-ghost:hover { background: var(--bg); color: var(--text); }
+    .btn-danger-ghost {
+      background: transparent; color: var(--danger);
+      border: 1px solid #fca5a5;
+    }
+    .btn-danger-ghost:hover { background: var(--danger-bg); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    .btn svg { width: 14px; height: 14px; }
+
+    /*Table card*/
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .table-card-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .table-card-title {
+      font-size: 14px; font-weight: 600;
+    }
+    .record-info { font-size: 12px; color: var(--text-3); }
+    .table-scroll { overflow-x: auto; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    thead th {
+      padding: 11px 16px;
+      text-align: left;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .5px;
+      color: var(--text-2);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      cursor: pointer; user-select: none; white-space: nowrap;
+    }
+    thead th:hover { color: var(--text); }
+    thead th.sort-active { color: var(--accent); }
+    .sort-icon { margin-left: 4px; opacity: .35; font-size: 10px; }
+    thead th.sort-active .sort-icon { opacity: 1; }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--bg); }
+    tbody td { padding: 11px 16px; }
+    .td-period { font-weight: 500; font-variant-numeric: tabular-nums; }
+    .td-num { font-variant-numeric: tabular-nums; }
+    .pct-bar-wrap {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .pct-bar-bg {
+      flex: 1; height: 5px; background: var(--border);
+      border-radius: 3px; overflow: hidden; max-width: 80px;
+    }
+    .pct-bar-fill {
+      height: 100%; border-radius: 3px;
+      transition: width .3s;
+    }
+    .pct-bar-fill.high { background: var(--danger); }
+    .pct-bar-fill.med  { background: var(--warn); }
+    .pct-bar-fill.low  { background: var(--success); }
+    .pct-text {
+      font-size: 12px; font-weight: 500; min-width: 38px;
+      text-align: right; font-variant-numeric: tabular-nums;
+    }
+    .pct-text.high { color: var(--danger); }
+    .pct-text.med  { color: var(--warn); }
+    .pct-text.low  { color: var(--success); }
+
+    /*Pagination*/
+    .pagination {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .page-info { font-size: 12px; color: var(--text-3); flex: 1; text-align: center; }
+
+    /*Empty/loading states*/
+    .state-box {
+      padding: 64px 20px; text-align: center;
+    }
+    .state-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; margin: 0 auto 16px;
+    }
+    .state-icon.neutral { background: var(--bg); }
+    .state-icon.error   { background: var(--danger-bg); }
+    .state-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .state-desc  { font-size: 13px; color: var(--text-2); max-width: 340px; margin: 0 auto; }
+    .state-desc.error { color: var(--danger); }
+
+    /*Spinner*/
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      flex-shrink: 0;
+    }
+    .spinner.dark {
+      border-color: rgba(0,0,0,.1);
+      border-top-color: var(--accent);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /*Toast*/
+    #toast {
+      position: fixed; bottom: 20px; right: 20px;
+      max-width: 320px; padding: 11px 16px;
+      border-radius: var(--radius);
+      font-size: 13px; font-weight: 500;
+      display: none; z-index: 999;
+      box-shadow: var(--shadow-md);
+      border: 1px solid;
+      animation: slideUp .2s ease;
+    }
+    #toast.show { display: flex; align-items: center; gap: 8px; }
+    #toast.ok  { background: var(--success-bg); color: var(--success); border-color: #86efac; }
+    #toast.err { background: var(--danger-bg);  color: var(--danger);  border-color: #fca5a5; }
+    @keyframes slideUp {
+      from { transform: translateY(8px); opacity: 0; }
+      to   { transform: translateY(0);   opacity: 1; }
+    }
+
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .controls-row { gap: 10px; }
+      .ctrl-group input, .ctrl-group select { min-width: 120px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="#">
+    <div class="logo-icon">☢</div>
+    Nuclear Outages
+  </a>
+  <span class="badge badge-blue">EIA Open Data</span>
+  <div class="header-sep"></div>
+  <span id="api-status" style="font-size:12px;color:var(--text-3)">
+    <span class="status-dot" id="status-dot"></span>
+    Connecting…
+  </span>
+</header>
+
+<main>
+  <!--Stats-->
+  <div class="section-title">Overview</div>
+  <div class="stats-grid">
+    <div class="stat-card blue">
+      <div class="stat-label">Total Records</div>
+      <div class="stat-value blue" id="stat-total">—</div>
+      <div class="stat-sub">Daily U.S. observations</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Latest Outage</div>
+      <div class="stat-value red" id="stat-latest-mw">—</div>
+      <div class="stat-sub" id="stat-latest-date">MW offline</div>
+    </div>
+    <div class="stat-card warn">
+      <div class="stat-label">Latest % Outage</div>
+      <div class="stat-value warn" id="stat-latest-pct">—</div>
+      <div class="stat-sub">Of total capacity</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Total Capacity</div>
+      <div class="stat-value green" id="stat-capacity">—</div>
+      <div class="stat-sub">MW nameplate</div>
+    </div>
+  </div>
+
+  <!--Controls-->
+  <div class="controls-card">
+    <div class="section-title" style="margin-bottom:14px">Filters</div>
+    <div class="controls-row">
+      <div class="ctrl-group">
+        <span class="ctrl-label">Start Date</span>
+        <input type="date" id="filter-start"/>
+      </div>
+      <div class="ctrl-group">
+        <span class="ctrl-label">End Date</span>
+        <input type="date" id="filter-end"/>
+      </div>
+      <div class="ctrl-group">
+        <span class="ctrl-label">Rows / Page</span>
+        <select id="filter-limit">
+          <option value="25">25 rows</option>
+          <option value="50" selected>50 rows</option>
+          <option value="100">100 rows</option>
+        </select>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" onclick="resetFilters()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M4 8h8M6 12h4"/></svg>
+        Reset
+      </button>
+      <button class="btn btn-primary" id="btn-search" onclick="search()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><path d="m11 11 2.5 2.5"/></svg>
+        Search
+      </button>
+      <button class="btn btn-danger-ghost" id="btn-refresh" onclick="refresh()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg>
+        Refresh Data
+      </button>
+    </div>
+  </div>
+
+  <!--Table-->
+  <div class="section-title">Outage Records</div>
+  <div class="table-card">
+    <div class="table-card-header">
+      <span class="table-card-title" id="table-title">All records</span>
+      <span class="record-info" id="record-count"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortBy('period')" id="th-period">
+              Date <span class="sort-icon" id="si-period">▾</span>
+            </th>
+            <th onclick="sortBy('capacity')" id="th-capacity">
+              Capacity (MW) <span class="sort-icon" id="si-capacity"></span>
+            </th>
+            <th onclick="sortBy('outage_mw')" id="th-outage_mw">
+              Outage (MW) <span class="sort-icon" id="si-outage_mw"></span>
+            </th>
+            <th onclick="sortBy('percent_outage')" id="th-percent_outage">
+              % Outage <span class="sort-icon" id="si-percent_outage"></span>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <tr><td colspan="4">
+            <div class="state-box">
+              <div class="state-icon neutral">🔍</div>
+              <div class="state-title">Ready to search</div>
+              <p class="state-desc">Click Search to load data, or Refresh Data to pull the latest from EIA.</p>
+            </div>
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="btn btn-ghost" id="btn-prev" onclick="changePage(-1)" disabled style="padding:0 12px;">← Prev</button>
+      <span class="page-info" id="page-info">—</span>
+      <button class="btn btn-ghost" id="btn-next" onclick="changePage(1)" disabled style="padding:0 12px;">Next →</button>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+  const API = "http://localhost:8000";
+  const API_KEY = "";
+
+  let page = 1, total = 0, sortCol = "period", sortDir = "desc", lastData = [];
+
+  function hdrs() {
+    const h = {};
+    if (API_KEY) h["X-API-Key"] = API_KEY;
+    return h;
+  }
+
+  // Status check
+  async function checkStatus() {
+    try {
+      const r = await fetch(`${API}/`, { headers: hdrs() });
+      if (r.ok) {
+        document.getElementById("status-dot").classList.add("online");
+        document.getElementById("api-status").innerHTML =
+          '<span class="status-dot online"></span> API online';
+      }
+    } catch { 
+      document.getElementById("api-status").innerHTML =
+        '<span class="status-dot"></span> API offline';
+    }
+  }
+  checkStatus();
+
+  // Search
+  async function search(p = 1) {
+    page = p;
+    const start = document.getElementById("filter-start").value;
+    const end   = document.getElementById("filter-end").value;
+    const limit = document.getElementById("filter-limit").value;
+
+    let url = `${API}/data?page=${p}&limit=${limit}`;
+    if (start) url += `&start_date=${start}`;
+    if (end)   url += `&end_date=${end}`;
+
+    setSearchLoading(true);
+    try {
+      const r = await fetch(url, { headers: hdrs() });
+      if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.detail || `HTTP ${r.status}`); }
+      const json = await r.json();
+      lastData = json.data;
+      total    = json.total;
+      renderTable(json.data, json.total, p, +limit);
+      updateStats(json.data);
+      document.getElementById("table-title").textContent =
+        start || end ? "Filtered results" : "All records";
+    } catch(e) {
+      showError(e.message);
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  function resetFilters() {
+    document.getElementById("filter-start").value = "";
+    document.getElementById("filter-end").value   = "";
+    document.getElementById("filter-limit").value = "50";
+    search(1);
+  }
+
+  // Sort
+  function sortBy(col) {
+    if (sortCol === col) sortDir = sortDir === "asc" ? "desc" : "asc";
+    else { sortCol = col; sortDir = "asc"; }
+
+    document.querySelectorAll("thead th").forEach(th => th.classList.remove("sort-active"));
+    document.querySelectorAll(".sort-icon").forEach(s => s.textContent = "");
+    const th = document.getElementById("th-" + col);
+    const si = document.getElementById("si-" + col);
+    if (th) th.classList.add("sort-active");
+    if (si) si.textContent = sortDir === "asc" ? "▴" : "▾";
+
+    const sorted = [...lastData].sort((a, b) => {
+      const av = a[col] ?? "", bv = b[col] ?? "";
+      return sortDir === "asc" ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    });
+    renderRows(sorted);
+  }
+
+  // Render
+  function renderTable(data, tot, p, limit) {
+    const totalPages = Math.max(1, Math.ceil(tot / limit));
+    document.getElementById("page-info").textContent =
+      tot > 0 ? `Page ${p} of ${totalPages}  ·  ${tot.toLocaleString()} records` : "No records found";
+    document.getElementById("btn-prev").disabled = p <= 1;
+    document.getElementById("btn-next").disabled = p >= totalPages;
+    document.getElementById("record-count").textContent =
+      tot > 0 ? `${tot.toLocaleString()} records` : "";
+    renderRows(data);
+  }
+
+  function renderRows(data) {
+    const tbody = document.getElementById("table-body");
+    if (!data || data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="state-box">
+        <div class="state-icon neutral">📭</div>
+        <div class="state-title">No records found</div>
+        <p class="state-desc">Try adjusting the date filters or refreshing the data.</p>
+      </div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const pct = parseFloat(r.percent_outage) || 0;
+      const cls = pct > 30 ? "high" : pct > 15 ? "med" : "low";
+      const mw  = r.outage_mw != null ? (+r.outage_mw).toLocaleString(undefined,{maximumFractionDigits:0}) : "—";
+      const cap = r.capacity  != null ? (+r.capacity ).toLocaleString(undefined,{maximumFractionDigits:0}) : "—";
+      return `<tr>
+        <td class="td-period">${r.period ?? "—"}</td>
+        <td class="td-num">${cap}</td>
+        <td class="td-num">${mw}</td>
+        <td>
+          <div class="pct-bar-wrap">
+            <div class="pct-bar-bg">
+              <div class="pct-bar-fill ${cls}" style="width:${Math.min(pct,100)}%"></div>
+            </div>
+            <span class="pct-text ${cls}">${pct.toFixed(1)}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  // Stats
+  function updateStats(data) {
+    document.getElementById("stat-total").textContent = total.toLocaleString();
+    if (data.length > 0) {
+      const first = data[0];
+      document.getElementById("stat-latest-mw").textContent =
+        first.outage_mw != null
+          ? (+first.outage_mw).toLocaleString(undefined,{maximumFractionDigits:0}) + " MW"
+          : "—";
+      document.getElementById("stat-latest-date").textContent =
+        first.period ? `As of ${first.period}` : "MW offline";
+      document.getElementById("stat-latest-pct").textContent =
+        first.percent_outage != null ? (+first.percent_outage).toFixed(1) + "%" : "—";
+      document.getElementById("stat-capacity").textContent =
+        first.capacity != null
+          ? (+first.capacity).toLocaleString(undefined,{maximumFractionDigits:0}) + " MW"
+          : "—";
+    }
+  }
+
+  function changePage(d) { search(page + d); }
+
+  // Refresh
+  async function refresh() {
+    const btn = document.getElementById("btn-refresh");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Refreshing…';
+    try {
+      const r = await fetch(`${API}/refresh`, { method: "POST", headers: hdrs() });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+      showToast("✓ " + j.message + " (" + j.rows_extracted + " rows)", "ok");
+      search(1);
+    } catch(e) {
+      showToast("✗ Refresh failed: " + e.message, "err");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg> Refresh Data`;
+    }
+  }
+
+  // UI helpers
+  function setSearchLoading(on) {
+    const btn = document.getElementById("btn-search");
+    btn.disabled = on;
+    btn.innerHTML = on
+      ? '<span class="spinner"></span> Loading…'
+      : `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><path d="m11 11 2.5 2.5"/></svg> Search`;
+  }
+
+  function showError(msg) {
+    document.getElementById("table-body").innerHTML = `<tr><td colspan="4"><div class="state-box">
+      <div class="state-icon error">⚠</div>
+      <div class="state-title">Could not connect to the API</div>
+      <p class="state-desc error">${msg}</p>
+    </div></td></tr>`;
+    showToast("API error: " + msg, "err");
+  }
+
+  function showToast(msg, type = "ok") {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.className   = `show ${type}`;
+    setTimeout(() => (t.className = ""), 4000);
+  }
+
+  // Load on open
+  search(1);
+</script>
+</body>
+</html>
