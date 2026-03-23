@@ -46,17 +46,17 @@ set EIA_API_KEY=your_key_here
 ### 3. Run the full pipeline
 
 ```bash
-# Extract data from EIA API (incremental by default)
+# Step 1 — Extract data from EIA API
 python connector.py
 
-# Build normalized data model
+# Step 2 — Build normalized data model
 python data_model.py
 
-# Start the REST API
+# Step 3 — Start the REST API
 uvicorn api:app --host 127.0.0.1 --port 8000 --reload
 
-# Open the dashboard
-# Mac:   open frontend/index.html
+# Step 4 — Open the dashboard
+# Mac:    open frontend/index.html
 # Windows: start frontend\index.html
 ```
 
@@ -117,7 +117,9 @@ curl -X POST "http://localhost:8000/refresh?full=true"
 
 ---
 
-## ER Diagram
+## Data Model
+
+### ER Diagram
 
 ```mermaid
 erDiagram
@@ -169,7 +171,7 @@ erDiagram
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `EIA_API_KEY` | Yes | EIA API key for data extraction |
-| `APP_API_KEY` | No | If set, all API endpoints require `X-API-Key: <value>` header |
+| `APP_API_KEY` | No | If set, all endpoints require `X-API-Key: <value>` header |
 | `API_HOST` | No | API bind address (default: `127.0.0.1`) |
 
 ---
@@ -180,7 +182,7 @@ erDiagram
 pytest tests/ -v
 ```
 
-Expected output: **14 passed**
+Expected output: **15 passed**
 
 ---
 
@@ -195,16 +197,64 @@ nuclear-outages-pipeline/
 │   └── index.html        # Part 4 – web dashboard
 ├── tests/
 │   └── test_pipeline.py  # unit + integration tests
-├── er_diagram.md         # ER diagram
+├── conftest.py           # pytest path configuration
 ├── requirements.txt      # Python dependencies
 └── README.md
 ```
 
 ---
 
+
+---
+
+## Cloud Deployment (Railway)
+
+### 1. Create a Railway account
+Go to [railway.app](https://railway.app) and sign up with your GitHub account.
+
+### 2. Deploy from GitHub
+1. Click **New Project** → **Deploy from GitHub repo**
+2. Select your `nuclear-outages-pipeline` repository
+3. Railway auto-detects the `Dockerfile` and builds the image
+
+### 3. Set environment variables
+In Railway dashboard → your service → **Variables**, add:
+
+| Variable | Value |
+|----------|-------|
+| `EIA_API_KEY` | your EIA API key |
+| `APP_API_KEY` | any secret string (optional auth) |
+| `API_HOST` | `0.0.0.0` |
+
+> Railway injects `PORT` automatically — no need to set it manually.
+
+### 4. Get your public URL
+Railway assigns a URL like:
+```
+https://nuclear-outages-pipeline-production.up.railway.app
+```
+
+### 5. Update the frontend
+In `frontend/index.html`, change line:
+```javascript
+const API = "http://localhost:8000";
+```
+to:
+```javascript
+const API = "https://your-app.up.railway.app";
+```
+
+### Verify deployment
+```bash
+curl https://your-app.up.railway.app/
+# {"status":"ok","message":"Nuclear Outages API is running."}
+
+curl "https://your-app.up.railway.app/data?limit=3"
+```
+
 ## Assumptions Made
 
-1. The `us-nuclear-outages` endpoint returns **national daily aggregates** (one row per day), not per-plant data. Per-plant data is available via `facility-nuclear-outages` and `generator-nuclear-outages`.
+1. The `us-nuclear-outages` endpoint returns **national daily aggregates** — one row per day representing the entire U.S., not per-plant data.
 2. `period` is the natural unique key — deduplicated on merge so re-runs are idempotent.
 3. The frontend connects to `http://localhost:8000` by default — change `API_BASE` in `index.html` for remote deployments.
 4. Authentication is optional: the API works without `APP_API_KEY` set.
@@ -215,4 +265,4 @@ nuclear-outages-pipeline/
 
 - **Incremental extraction** — checkpoint file tracks last run date; only fetches new records on subsequent runs
 - **Auth/authorization** — optional `X-API-Key` header validation via `APP_API_KEY` env var
-- **14 unit + integration tests** — covers connector, data model, and API endpoints
+- **15 unit + integration tests** — covers connector, data model, and API endpoints

@@ -1,3 +1,11 @@
+"""
+Nuclear Outages REST API
+Endpoints:
+  GET  /data     – query outage records with filters & pagination
+  POST /refresh  – trigger a fresh extraction from EIA API
+  GET  /summary  – daily summary with rolling averages
+"""
+
 import logging
 import os
 from datetime import date
@@ -186,4 +194,5 @@ def get_summary(
 
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host=API_HOST, port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("api:app", host=API_HOST, port=port, reload=True)
