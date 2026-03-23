@@ -338,7 +338,7 @@
 </header>
 
 <main>
-  <!--Stats-->
+  <!-- Stats -->
   <div class="section-title">Overview</div>
   <div class="stats-grid">
     <div class="stat-card blue">
@@ -363,7 +363,7 @@
     </div>
   </div>
 
-  <!--Controls-->
+  <!-- Controls -->
   <div class="controls-card">
     <div class="section-title" style="margin-bottom:14px">Filters</div>
     <div class="controls-row">
@@ -399,7 +399,7 @@
     </div>
   </div>
 
-  <!--Table-->
+  <!-- Table -->
   <div class="section-title">Outage Records</div>
   <div class="table-card">
     <div class="table-card-header">
@@ -446,7 +446,7 @@
 <div id="toast"></div>
 
 <script>
-  const API = "https://nuclear-outages-pipeline-production.up.railway.app";
+  const API = "http://localhost:8000";
   const API_KEY = "";
 
   let page = 1, total = 0, sortCol = "period", sortDir = "desc", lastData = [];
@@ -594,21 +594,53 @@
   function changePage(d) { search(page + d); }
 
   // Refresh
+  let refreshPoller = null;
+
   async function refresh() {
     const btn = document.getElementById("btn-refresh");
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Refreshing…';
+    btn.innerHTML = '<span class="spinner"></span> Starting…';
     try {
       const r = await fetch(`${API}/refresh`, { method: "POST", headers: hdrs() });
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
-      showToast("Completed: " + j.message + " (" + j.rows_extracted + " rows)", "ok");
-      search(1);
+
+      if (j.status === "running") {
+        showToast("⏳ Already refreshing, please wait…", "ok");
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg> Refresh Data`;
+        return;
+      }
+
+      // Poll /refresh/status every 2 seconds until done
+      btn.innerHTML = '<span class="spinner"></span> Refreshing…';
+      refreshPoller = setInterval(pollRefreshStatus, 2000);
+
     } catch(e) {
-      showToast("Refresh failed: " + e.message, "err");
-    } finally {
+      showToast("✗ Refresh failed: " + e.message, "err");
       btn.disabled = false;
       btn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg> Refresh Data`;
+    }
+  }
+
+  async function pollRefreshStatus() {
+    try {
+      const r = await fetch(`${API}/refresh/status`, { headers: hdrs() });
+      const j = await r.json();
+      if (!j.running) {
+        clearInterval(refreshPoller);
+        const btn = document.getElementById("btn-refresh");
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg> Refresh Data`;
+        if (j.error) {
+          showToast("✗ Refresh failed: " + j.error, "err");
+        } else {
+          showToast("✓ Refresh complete — " + (j.last_result || "data updated"), "ok");
+          search(1);
+        }
+      }
+    } catch(e) {
+      clearInterval(refreshPoller);
     }
   }
 
