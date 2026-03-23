@@ -446,7 +446,7 @@
 <div id="toast"></div>
 
 <script>
-  const API = "http://localhost:8000";
+  const API = "https://nuclear-outages-pipeline-production.up.railway.app/";
   const API_KEY = "";
 
   let page = 1, total = 0, sortCol = "period", sortDir = "desc", lastData = [];
@@ -602,10 +602,10 @@
       const r = await fetch(`${API}/refresh`, { method: "POST", headers: hdrs() });
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
-      showToast("✓ " + j.message + " (" + j.rows_extracted + " rows)", "ok");
+      showToast("Completed: " + j.message + " (" + j.rows_extracted + " rows)", "ok");
       search(1);
     } catch(e) {
-      showToast("✗ Refresh failed: " + e.message, "err");
+      showToast("Refresh failed: " + e.message, "err");
     } finally {
       btn.disabled = false;
       btn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg> Refresh Data`;
