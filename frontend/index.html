@@ -617,7 +617,7 @@
       refreshPoller = setInterval(pollRefreshStatus, 2000);
 
     } catch(e) {
-      showToast("✗ Refresh failed: " + e.message, "err");
+      showToast("Refresh failed: " + e.message, "err");
       btn.disabled = false;
       btn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg> Refresh Data`;
     }
@@ -633,9 +633,9 @@
         btn.disabled = false;
         btn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8A5 5 0 1 1 8 3m5 0V7h-4"/></svg> Refresh Data`;
         if (j.error) {
-          showToast("✗ Refresh failed: " + j.error, "err");
+          showToast("Refresh failed: " + j.error, "err");
         } else {
-          showToast("✓ Refresh complete — " + (j.last_result || "data updated"), "ok");
+          showToast("Refresh complete — " + (j.last_result || "data updated"), "ok");
           search(1);
         }
       }
